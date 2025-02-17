@@ -1,3 +1,4 @@
+import asyncio
 import re
 from sciproxy.client import Optional
 from sciproxy.downloaders.abc import Downloader
@@ -5,7 +6,6 @@ import aiohttp
 import logging
 
 logger = logging.getLogger(__name__)
-
 
 class SciHubDownloader(Downloader):
     async def fetch_pdf(
@@ -24,18 +24,31 @@ class SciHubDownloader(Downloader):
             text = await response.text()
             match = re.search(r"location\.href='(/[^']*)'", text)
             if match:
-                url = match.group(1)
-                if url.startswith("//"):
-                    pdf_url = "https:" + url
-                else:
-                    pdf_url = "https://sci-hub.se" + url
+                pdf_url = self._construct_pdf_url(match.group(1))
                 logger.info(f"PDF URL obtained from Sci-Hub: {pdf_url}")
+                return await self._retry_fetch_pdf(pdf_url, session)
+            logger.warning(f"No PDF found for DOI {doi} on Sci-Hub")
+            return None
 
+    def _construct_pdf_url(self, url: str) -> str:
+        """Construct the full PDF URL from the matched URL."""
+        if url.startswith("//"):
+            return "https:" + url
+        return "https://sci-hub.se" + url
+
+    async def _retry_fetch_pdf(
+        self, pdf_url: str, session: aiohttp.ClientSession, retry_limit: int = 4
+    ) -> Optional[aiohttp.ClientResponse]:
+        """Retry fetching the PDF if a ConnectionRefusedError occurs with increasing delay."""
+        for attempt in range(retry_limit):
+            try:
                 pdf_response = await session.get(pdf_url)
                 if pdf_response.status == 200:
                     return pdf_response
-                else:
-                    logger.warning(f"Failed to fetch PDF from Sci-Hub: {pdf_url}")
-                    return None
-            logger.warning(f"No PDF found for DOI {doi} on Sci-Hub")
-            return None
+                logger.warning(f"Failed to fetch PDF from Sci-Hub: {pdf_url}")
+                return None
+            except aiohttp.ClientConnectionError:
+                logger.warning(f"Connection refused on attempt {attempt + 1} to fetch PDF from Sci-Hub: {pdf_url}")
+                await asyncio.sleep(3 ** attempt)  # Exponential backoff using attempt index
+        logger.warning(f"Failed to fetch PDF from Sci-Hub after {retry_limit} attempts: {pdf_url}")
+        return None
