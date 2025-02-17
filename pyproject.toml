@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "sciproxy"
+version = "0.1.0"
+description = ""
+authors = ["tiagovla <tiagovla@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+aiohttp = "^3.11.12"
+
+[tool.poetry.scripts]
+sciproxy = "sciproxy.__main__:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
