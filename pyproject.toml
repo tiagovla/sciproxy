@@ -8,6 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.13"
 aiohttp = "^3.11.12"
+aiofiles = "^24.1.0"
 
 [tool.poetry.scripts]
 sciproxy = "sciproxy.__main__:main"

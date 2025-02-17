@@ -1,4 +1,5 @@
 import aiohttp
+import aiofiles
 from sciproxy.downloaders.abc import Downloader
 from aiohttp import web
 from typing import Optional, List
@@ -29,9 +30,8 @@ class SciProxy:
                 else None
             )
 
-            if cache_path and os.path.exists(cache_path):
-                with open(cache_path, "rb") as f:
-                    pdf = f.read()
+            if cache_path and await self._file_exists(cache_path):
+                pdf = await self._read_file(cache_path)
                 return web.Response(body=pdf, content_type="application/pdf")
 
             async with aiohttp.ClientSession() as session:
@@ -53,13 +53,23 @@ class SciProxy:
                         await stream_response.write_eof()
 
                         if cache_path:
-                            with open(cache_path, "wb") as f:
-                                f.write(pdf_data)
+                            await self._write_file(cache_path, pdf_data)
                         return stream_response
                 raise Exception("Invalid DOI URL")
         except Exception as e:
             logger.error(f"Error fetching PDF: {e}")
             return web.Response(status=500, text=f"Error fetching PDF: {e}")
+
+    async def _file_exists(self, path: str) -> bool:
+        return os.path.exists(path)
+
+    async def _read_file(self, path: str) -> bytes:
+        async with aiofiles.open(path, "rb") as f:
+            return await f.read()
+
+    async def _write_file(self, path: str, data: bytes):
+        async with aiofiles.open(path, "wb") as f:
+            await f.write(data)
 
     def run(self, host: str, port: int):
         logger.info(f"Starting SciProxy server on {host}:{port}")
