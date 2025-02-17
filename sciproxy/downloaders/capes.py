@@ -17,7 +17,8 @@ class CAPESDownloader(Downloader):
         self.proxy_auth = proxy_auth
 
     async def fetch_pdf(
-        self, doi: str, session: aiohttp.ClientSession) -> Optional[aiohttp.ClientResponse]:
+        self, doi: str, session: aiohttp.ClientSession
+    ) -> Optional[aiohttp.ClientResponse]:
         """Fetch the PDF for the given DOI from IEEE."""
         logger.info(f"Fetching PDF for DOI {doi} from IEEE (CAPES)")
         redirect_url = await self.get_redirect_url(doi, session)
@@ -53,9 +54,11 @@ class CAPESDownloader(Downloader):
             else None
         )
 
-        pdf_response = await session.get( url, proxy=self.proxy_url, proxy_auth=proxy_auth, headers=headers) 
+        pdf_response = await session.get(
+            url, proxy=self.proxy_url, proxy_auth=proxy_auth, headers=headers
+        )
         if pdf_response.status == 200:
             return pdf_response
         else:
-            logger.warning(f"Failed to fetch PDF from IEEE (CAPES): {pdf_url}")
+            logger.warning(f"Failed to fetch PDF from IEEE (CAPES): {url}")
             return None
