@@ -10,14 +10,14 @@ logger = logging.getLogger(__name__)
 class SciHubDownloader(Downloader):
     async def fetch_pdf(
         self, doi: str, session: aiohttp.ClientSession
-    ) -> Optional[bytes]:
+    ) -> Optional[aiohttp.ClientResponse]:
         """Fetch the PDF for the given DOI from Sci-Hub."""
         logger.info(f"Fetching PDF for DOI {doi} from Sci-Hub")
         return await self.get_pdf_from_sci_hub(doi, session)
 
     async def get_pdf_from_sci_hub(
         self, doi: str, session: aiohttp.ClientSession
-    ) -> Optional[bytes]:
+    ) -> Optional[aiohttp.ClientResponse]:
         """Get the PDF from Sci-Hub using the DOI."""
         url = f"https://sci-hub.se/{doi}"
         async with session.get(url) as response:
@@ -30,7 +30,12 @@ class SciHubDownloader(Downloader):
                 else:
                     pdf_url = "https://sci-hub.se" + url
                 logger.info(f"PDF URL obtained from Sci-Hub: {pdf_url}")
-                async with session.get(pdf_url) as response:
-                    return await response.read()
+
+                pdf_response = await session.get(pdf_url)
+                if pdf_response.status == 200:
+                    return pdf_response
+                else:
+                    logger.warning(f"Failed to fetch PDF from Sci-Hub: {pdf_url}")
+                    return None
             logger.warning(f"No PDF found for DOI {doi} on Sci-Hub")
             return None

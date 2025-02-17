@@ -5,7 +5,9 @@ from typing import Optional, List
 import os
 import logging
 
-
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -34,19 +36,33 @@ class SciProxy:
 
             async with aiohttp.ClientSession() as session:
                 for strategy in self.strategies:
-                    pdf = await strategy.fetch_pdf(doi, session)
-                    if pdf:
+                    pdf_response = await strategy.fetch_pdf(doi, session)
+                    if pdf_response:
+                        stream_response = web.StreamResponse(
+                            status=200,
+                            headers={"Content-Type": "application/pdf"},
+                        )
+
+                        pdf_data = bytearray()
+                        await stream_response.prepare(request)
+
+                        async for chunk in pdf_response.content.iter_chunked(8 * 1024):
+                            await stream_response.write(chunk)
+                            pdf_data.extend(chunk)
+
+                        await stream_response.write_eof()
+
                         if cache_path:
                             with open(cache_path, "wb") as f:
-                                f.write(pdf)
-                        return web.Response(body=pdf, content_type="application/pdf")
+                                f.write(pdf_data)
+                        return stream_response
                 raise Exception("Invalid DOI URL")
         except Exception as e:
             logger.error(f"Error fetching PDF: {e}")
             return web.Response(status=500, text=f"Error fetching PDF: {e}")
 
     def run(self, host: str, port: int):
-        logger.info("Starting SciProxy server on {host}:{port}")
+        logger.info(f"Starting SciProxy server on {host}:{port}")
         app = web.Application()
         app.router.add_get("/favicon.ico", lambda _: web.Response(status=404))
         app.router.add_get("/{doi:.*}", self.handle_request)
