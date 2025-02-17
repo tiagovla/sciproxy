@@ -30,13 +30,16 @@ class SciProxy:
         try:
             doi = request.match_info.get("doi", "")
             sanitized_doi = doi.replace("/", "_")
+            nocache = request.query.get("nocache", None) is not None
             cache_path = (
                 os.path.join(self.cache_dir, f"{sanitized_doi}.pdf")
                 if self.cache_dir
                 else None
             )
 
-            if cache_path and await self._file_exists(cache_path):
+            if nocache:
+                logger.info(f"Skipping cache")
+            elif cache_path and await self._file_exists(cache_path):
                 pdf = await self._read_file(cache_path)
                 return web.Response(body=pdf, content_type="application/pdf")
 
