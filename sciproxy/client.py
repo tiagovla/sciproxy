@@ -19,6 +19,12 @@ class SciProxy:
         if cache_dir:
             os.makedirs(cache_dir, exist_ok=True)
 
+    async def handle_static(self, request: web.Request) -> web.Response:
+        """Handle the incoming request to fetch a PDF by DOI."""
+        filename = request.match_info.get("filename", "")
+        index_path = os.path.join(os.path.dirname(__file__), "static", filename)
+        return web.FileResponse(index_path)
+
     async def handle_request(self, request: web.Request) -> web.Response:
         """Handle the incoming request to fetch a PDF by DOI."""
         try:
@@ -55,10 +61,20 @@ class SciProxy:
                         if cache_path:
                             await self._write_file(cache_path, pdf_data)
                         return stream_response
-                raise Exception("Invalid DOI URL")
+                return await self.handle_not_found()
         except Exception as e:
             logger.error(f"Error fetching PDF: {e}")
             return web.Response(status=500, text=f"Error fetching PDF: {e}")
+
+    async def handle_index(self, request: web.Request) -> web.Response:
+        logger.info("Index page requested")
+        index_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+        return web.FileResponse(index_path)
+
+    async def handle_not_found(self) -> web.Response:
+        logger.info("Not found page request.")
+        index_path = os.path.join(os.path.dirname(__file__), "static", "not_found.html")
+        return web.FileResponse(index_path)
 
     async def _file_exists(self, path: str) -> bool:
         return os.path.exists(path)
@@ -74,6 +90,8 @@ class SciProxy:
     def run(self, host: str, port: int):
         logger.info(f"Starting SciProxy server on {host}:{port}")
         app = web.Application()
+        app.router.add_get("/", self.handle_index)
+        app.router.add_get("/static/{filename:.*}", self.handle_static)
         app.router.add_get("/favicon.ico", lambda _: web.Response(status=404))
         app.router.add_get("/{doi:.*}", self.handle_request)
         web.run_app(app, host=host, port=port)

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DOI PDF Downloader</title>
+    <link rel="stylesheet" href="static/styles.css" />
+  </head>
+  <body>
+    <!-- Dark/Light Mode Toggle Switch -->
+    <div class="mode-switch">
+      <span>Light</span>
+      <label class="switch">
+        <input type="checkbox" id="modeToggle" onclick="toggleDarkMode()" />
+        <span class="slider"></span>
+      </label>
+      <span>Dark</span>
+    </div>
+
+    <!-- Form Container -->
+    <div class="container">
+      <h1>DOI PDF Downloader</h1>
+      <p>Enter the DOI of the manuscript to download its PDF.</p>
+      <form id="doiForm" onsubmit="handleFormSubmit(event)">
+        <input
+          type="text"
+          id="doiInput"
+          placeholder="Enter DOI (e.g., 10.1000/xyz123)"
+          required
+        />
+        <br />
+        <button class=button type="submit">Download PDF</button>
+      </form>
+      <div class="spinner" id="spinner"></div>
+    </div>
+
+    <script>
+      function handleFormSubmit(event) {
+        event.preventDefault();
+        const doi = document.getElementById("doiInput").value.trim();
+
+        // Add loading class to container and show spinner
+        document.querySelector(".container").classList.add("loading");
+        document.getElementById("spinner").style.display = "block";
+
+        // Simulate a small delay before redirect (for visual effect)
+        setTimeout(() => {
+          window.location.href = `/${doi}`;
+        }, 500);
+      }
+    </script>
+    <script src="static/dark-mode.js"></script>
+  </body>
+</html>
