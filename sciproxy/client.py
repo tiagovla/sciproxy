@@ -32,7 +32,7 @@ class SciProxy:
             )
 
             if nocache:
-                logger.info(f"Skipping cache")
+                logger.info("Skipping cache")
             elif cache_path and await self._file_exists(cache_path):
                 pdf = await self._read_file(cache_path)
                 return web.Response(body=pdf, content_type="application/pdf")

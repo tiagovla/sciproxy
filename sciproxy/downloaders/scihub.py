@@ -7,6 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class SciHubDownloader(Downloader):
     async def fetch_pdf(
         self, doi: str, session: aiohttp.ClientSession
@@ -48,7 +49,13 @@ class SciHubDownloader(Downloader):
                 logger.warning(f"Failed to fetch PDF from Sci-Hub: {pdf_url}")
                 return None
             except aiohttp.ClientConnectionError:
-                logger.warning(f"Connection refused on attempt {attempt + 1} to fetch PDF from Sci-Hub: {pdf_url}")
-                await asyncio.sleep(3 ** attempt)  # Exponential backoff using attempt index
-        logger.warning(f"Failed to fetch PDF from Sci-Hub after {retry_limit} attempts: {pdf_url}")
+                logger.warning(
+                    f"Connection refused on attempt {attempt + 1} to fetch PDF from Sci-Hub: {pdf_url}"
+                )
+                await asyncio.sleep(
+                    3**attempt
+                )  # Exponential backoff using attempt index
+        logger.warning(
+            f"Failed to fetch PDF from Sci-Hub after {retry_limit} attempts: {pdf_url}"
+        )
         return None
