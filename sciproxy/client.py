@@ -19,12 +19,6 @@ class SciProxy:
         if cache_dir:
             os.makedirs(cache_dir, exist_ok=True)
 
-    async def handle_static(self, request: web.Request) -> web.Response:
-        """Handle the incoming request to fetch a PDF by DOI."""
-        filename = request.match_info.get("filename", "")
-        index_path = os.path.join(os.path.dirname(__file__), "static", filename)
-        return web.FileResponse(index_path)
-
     async def handle_request(self, request: web.Request) -> web.Response:
         """Handle the incoming request to fetch a PDF by DOI."""
         try:
@@ -93,8 +87,10 @@ class SciProxy:
     def run(self, host: str, port: int):
         logger.info(f"Starting SciProxy server on {host}:{port}")
         app = web.Application()
+        app.router.add_static(
+            "/static", os.path.join(os.path.dirname(__file__), "static")
+        )
         app.router.add_get("/", self.handle_index)
-        app.router.add_get("/static/{filename:.*}", self.handle_static)
         app.router.add_get("/favicon.ico", lambda _: web.Response(status=404))
         app.router.add_get("/{doi:.*}", self.handle_request)
         web.run_app(app, host=host, port=port)
