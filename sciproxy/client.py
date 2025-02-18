@@ -23,10 +23,17 @@ class SciProxy:
         """Handle the incoming request to fetch a PDF by DOI."""
         try:
             doi = request.match_info.get("doi", "")
+            api = request.query.get("api", None) is not None
+            nocache = request.query.get("nocache", None) is not None
+
+            if api:
+                pdf_url = f"{request.url.scheme}://{request.url.host}/{doi}"
+                logger.info(f"API request for pdf_url: {pdf_url}")
+                return web.json_response({"url_for_pdf": pdf_url})
+
             if not doi.startswith("10."):
                 return await self.handle_not_found()
             sanitized_doi = doi.replace("/", "_")
-            nocache = request.query.get("nocache", None) is not None
             cache_path = (
                 os.path.join(self.cache_dir, f"{sanitized_doi}.pdf")
                 if self.cache_dir
@@ -43,6 +50,7 @@ class SciProxy:
                 for strategy in self.strategies:
                     pdf_response = await strategy.fetch_pdf(doi, session)
                     if pdf_response:
+
                         stream_response = web.StreamResponse(
                             status=200,
                             headers={"Content-Type": "application/pdf"},
@@ -70,6 +78,27 @@ class SciProxy:
         index_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
         return web.FileResponse(index_path)
 
+    async def handle_api(self, request: web.Request) -> web.Response:
+        doi = request.match_info.get("doi", "")
+        url = f"https://api.unpaywall.org/v2/{doi}?email=test@mail.com"
+        logger.info(
+            f"API request for pdf_url: {f"{request.url.scheme}://{request.url.host}/{doi}"}"
+        )
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    resp_json = await response.json()
+                    resp_json = resp_json | {
+                        "oa_locations": [
+                            {
+                                "url_for_pdf": f"{request.url.scheme}://{request.url.host}/{doi}"
+                            }
+                        ]
+                    }
+                    return web.json_response(resp_json)
+        except Exception as e:
+            return web.json_response({"error": str(e)})
+
     async def handle_not_found(self) -> web.Response:
         logger.info("Not found page request.")
         index_path = os.path.join(os.path.dirname(__file__), "static", "not_found.html")
@@ -95,4 +124,5 @@ class SciProxy:
         app.router.add_get("/", self.handle_index)
         app.router.add_get("/favicon.ico", lambda _: web.Response(status=404))
         app.router.add_get("/{doi:.*}", self.handle_request)
+        app.router.add_get("/api/{doi:.*}", self.handle_api)
         web.run_app(app, host=host, port=port)
