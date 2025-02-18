@@ -23,6 +23,8 @@ class SciProxy:
         """Handle the incoming request to fetch a PDF by DOI."""
         try:
             doi = request.match_info.get("doi", "")
+            if not doi.startswith("10."):
+                return await self.handle_not_found()
             sanitized_doi = doi.replace("/", "_")
             nocache = request.query.get("nocache", None) is not None
             cache_path = (
