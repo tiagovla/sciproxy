@@ -13,6 +13,10 @@ aiofiles = "^24.1.0"
 [tool.poetry.scripts]
 sciproxy = "sciproxy.__main__:main"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+pytest-asyncio = "^0.26.0"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
