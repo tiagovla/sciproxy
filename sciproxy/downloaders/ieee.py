@@ -78,6 +78,7 @@ class IEEEDownloader(Downloader):
         """
         url = self._get_pdf_url(doc_id)
         logger.info(f"Fetching PDF from URL: {url}")
+        logger.info(f"Proxy URL: {self.proxy_url}")
 
         try:
             async with session.get(url, proxy=self.proxy_url) as response:
