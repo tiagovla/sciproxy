@@ -81,13 +81,13 @@ class IEEEDownloader(Downloader):
         logger.info(f"Proxy URL: {self.proxy_url}")
 
         try:
-            async with session.get(url, proxy=self.proxy_url) as response:
-                if response.status != 200:
-                    logger.warning(
-                        f"Failed to fetch PDF from IEEE ({self.hostname}): {url}, Status: {response.status}"
-                    )
-                    return None
-                return response
+            response = await session.get(url, proxy=self.proxy_url)
+            if response.status != 200:
+                logger.warning(
+                    f"Failed to fetch PDF from IEEE ({self.hostname}): {url}, Status: {response.status}"
+                )
+                return None
+            return response
         except aiohttp.ClientError as e:
             logger.error(f"HTTP request failed for URL {url}: {e}")
             return None
