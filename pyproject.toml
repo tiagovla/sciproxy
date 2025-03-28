@@ -9,6 +9,7 @@ readme = "README.md"
 python = "^3.13"
 aiohttp = "^3.11.12"
 aiofiles = "^24.1.0"
+pikepdf = "^9.5.2"
 
 [tool.poetry.scripts]
 sciproxy = "sciproxy.__main__:main"

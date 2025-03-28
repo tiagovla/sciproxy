@@ -1,10 +1,12 @@
 import aiohttp
+import io
 import aiofiles
 from sciproxy.downloaders.abc import Downloader
 from aiohttp import web
 from typing import Optional, List
 import os
 import logging
+import pikepdf
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -58,17 +60,19 @@ class SciProxy:
                             headers={"Content-Type": "application/pdf"},
                         )
 
-                        pdf_data = bytearray()
+                        pdf_data = io.BytesIO()
                         await stream_response.prepare(request)
 
                         async for chunk in pdf_response.content.iter_chunked(8 * 1024):
                             await stream_response.write(chunk)
-                            pdf_data.extend(chunk)
+                            pdf_data.write(chunk)
 
                         await stream_response.write_eof()
 
                         if cache_path:
-                            await self._write_file(cache_path, pdf_data)
+                            pdf_data.seek(0)
+                            with pikepdf.open(pdf_data) as pdf:
+                                pdf.save(cache_path, linearize=True)
                         return stream_response
                 return await self.handle_not_found()
         except Exception as e:
