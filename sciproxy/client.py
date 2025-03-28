@@ -46,7 +46,10 @@ class SciProxy:
                 pdf = await self._read_file(cache_path)
                 return web.Response(body=pdf, content_type="application/pdf")
 
-            async with aiohttp.ClientSession() as session:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36"
+            }
+            async with aiohttp.ClientSession(headers=headers) as session:
                 for strategy in self.strategies:
                     pdf_response = await strategy.fetch_pdf(doi, session)
                     if pdf_response:

@@ -1,21 +1,20 @@
 import os
 from sciproxy import SciProxy
-from sciproxy import CAPESDownloader
+from sciproxy import IEEEDownloader
 from sciproxy import SciHubDownloader
 
 
 def main():
     proxy_url = os.environ["PROXY_URL"]
-    proxy_username = os.environ["PROXY_USERNAME"]
-    proxy_password = os.environ["PROXY_PASSWORD"]
     cache_dir = os.environ.get("CACHE_DIR", None)
+    ieee_hostname = os.environ.get("IEEE_HOSTNAME", "ieeexplore.ieee.org")
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8080"))
 
     downloaders = [
-        CAPESDownloader(
+        IEEEDownloader(
+            hostname=ieee_hostname,
             proxy_url=proxy_url,
-            proxy_auth={"username": proxy_username, "password": proxy_password},
         ),
         SciHubDownloader(),
     ]
