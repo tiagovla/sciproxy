@@ -43,8 +43,7 @@ class SciProxy:
             if nocache:
                 logger.info("Skipping cache")
             elif cache_path and await self._file_exists(cache_path):
-                pdf = await self._read_file(cache_path)
-                return web.Response(body=pdf, content_type="application/pdf")
+                return web.FileResponse(cache_path)
 
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36"
