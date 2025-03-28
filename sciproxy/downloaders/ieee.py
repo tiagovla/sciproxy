@@ -1,93 +1,185 @@
+import asyncio
+import logging
+import urllib.parse
+from typing import Optional
+
+import aiohttp
 from sciproxy.downloaders.abc import Downloader
 import sciproxy.utils
-import aiohttp
-import logging
-from typing import Optional
+
 
 logger = logging.getLogger(__name__)
 
-IEEE_HOSTNAME = "ieeexplore.ieee.org"
+DEFAULT_IEEE_HOSTNAME = "ieeexplore.ieee.org"
+DEFAULT_TIMEOUT_SECONDS: int = 60
 
 
 class IEEEDownloader(Downloader):
-    def __init__(self, hostname: str, proxy_url: Optional[str] = None):
+    """
+    Downloader implementation for fetching PDF documents from IEEE Xplore.
+
+    Resolve DOIs to IEEE document URLs, extract the document ID,
+    and attempt to download the PDF using the standard IEEE mechanism.
+    """
+
+    def __init__(
+        self,
+        hostname: str = DEFAULT_IEEE_HOSTNAME,
+        proxy_url: Optional[str] = None,
+        timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    ):
         """
         Initialize the IEEE Downloader.
 
-        :param hostname: The hostname for IEEE (e.g., "ieeexplore.ieee.org").
-        :param proxy_url: Optional proxy URL for requests.
+        Args:
+            hostname: The base hostname for the IEEE Xplore instance.
+                      Defaults to 'ieeexplore.ieee.org'.
+            proxy_url: Optional proxy URL (e.g., 'http://user:pass@host:port')
+                       to use for the final PDF download request.
+            timeout_seconds: The total timeout in seconds for the PDF download request.
+                             Defaults to 60 seconds.
         """
-        self.hostname = hostname
+        if not hostname:
+            raise ValueError("IEEE hostname cannot be empty.")
+        if not isinstance(timeout_seconds, int) or timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be a positive integer.")
+
+        self.hostname = hostname.lower()
         self.proxy_url = proxy_url
+        self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+
+        logger.info(
+            f"IEEEDownloader initialized for hostname '{self.hostname}' "
+            f"with proxy {'enabled' if proxy_url else 'disabled'} "
+            f"and total timeout {timeout_seconds}s."
+        )
 
     def _get_pdf_url(self, doc_id: str) -> str:
-        """
-        Construct the PDF URL for a given document ID.
-
-        :param doc_id: The document ID.
-        :return: The constructed PDF URL.
-        """
+        """Construct the direct PDF download URL for a given IEEE document ID."""
         return f"https://{self.hostname}/stampPDF/getPDF.jsp?tp=&arnumber={doc_id}"
+
+    async def _extract_doc_id_from_url(self, url_str: str) -> Optional[str]:
+        """
+        Safely extract the IEEE document ID from a document URL.
+        """
+        try:
+            parsed_url = urllib.parse.urlparse(url_str)
+            if parsed_url.netloc.lower() != DEFAULT_IEEE_HOSTNAME:
+                return None
+            path_segments = [seg for seg in parsed_url.path.split("/") if seg]
+            try:
+                doc_index = path_segments.index("document")
+                if doc_index + 1 < len(path_segments):
+                    potential_doc_id = path_segments[doc_index + 1]
+                    if potential_doc_id.isdigit():
+                        return potential_doc_id
+            except (ValueError, IndexError):
+                pass
+        except Exception as e:
+            logger.error(
+                f"Error parsing URL or extracting doc ID from '{url_str}': {e}",
+                exc_info=True,
+            )
+        logger.debug(f"Could not extract IEEE doc ID from URL: {url_str}")
+        return None
 
     async def fetch_pdf(
         self, doi: str, session: aiohttp.ClientSession
     ) -> Optional[aiohttp.ClientResponse]:
         """
-        Fetch the PDF for the given DOI from IEEE.
-
-        :param doi: The DOI of the document.
-        :param session: An active aiohttp.ClientSession.
-        :return: The aiohttp.ClientResponse if successful, None otherwise.
+        Fetch the PDF for a given DOI by resolving it, extracting the doc ID,
+        and then downloading.
         """
-        logger.info(f"Fetching PDF for DOI {doi} from IEEE")
-
+        logger.info(f"Attempting fetch for DOI {doi} via IEEE ({self.hostname})")
+        redirect_url_str: Optional[str] = None
         try:
-            redirect_url = await sciproxy.utils.get_redirect_url(doi, session)
+            redirect_url_str = await sciproxy.utils.get_redirect_url(doi, session)
+            if not redirect_url_str:
+                logger.warning(f"Failed to resolve DOI {doi} to a redirect URL.")
+                return None
+            logger.debug(f"DOI {doi} resolved to redirect URL: {redirect_url_str}")
         except Exception as e:
-            logger.error(f"Failed to get redirect URL for DOI {doi}: {e}")
+            logger.error(f"Error resolving DOI {doi}: {e}", exc_info=True)
             return None
 
-        if IEEE_HOSTNAME not in redirect_url:
-            logger.debug(
-                f"Redirect URL does not contain '{IEEE_HOSTNAME}': {redirect_url}"
+        doc_id = await self._extract_doc_id_from_url(redirect_url_str)
+        if not doc_id:
+            logger.warning(
+                f"Could not extract valid IEEE doc ID for DOI {doi} from URL: {redirect_url_str}"
             )
             return None
 
-        try:
-            doc_id = redirect_url.split("/")[
-                redirect_url.split("/").index("document") + 1
-            ]
-        except (ValueError, IndexError) as e:
-            logger.error(
-                f"Failed to extract document ID from redirect URL: {redirect_url}, Error: {e}"
-            )
-            return None
-
-        logger.info(f"Redirect URL obtained: {redirect_url}, Document ID: {doc_id}")
         return await self.fetch_pdf_doc_id(doc_id, session)
 
     async def fetch_pdf_doc_id(
         self, doc_id: str, session: aiohttp.ClientSession
     ) -> Optional[aiohttp.ClientResponse]:
         """
-        Fetch the PDF from IEEE using the document ID.
+        Fetch the PDF directly using the IEEE document ID.
 
-        :param doc_id: The document ID.
-        :param session: An active aiohttp.ClientSession.
-        :return: The aiohttp.ClientResponse if successful, None otherwise.
+        Args:
+            doc_id: The IEEE document ID.
+            session: An active aiohttp.ClientSession.
+
+        Returns:
+            An aiohttp.ClientResponse containing the PDF stream if successful,
+            None otherwise. The caller is responsible for releasing this response.
         """
-        url = self._get_pdf_url(doc_id)
-        logger.info(f"Fetching PDF from URL: {url}")
-        logger.info(f"Proxy URL: {self.proxy_url}")
+        pdf_url = self._get_pdf_url(doc_id)
+        logger.info(f"Fetching PDF using document ID {doc_id} from URL: {pdf_url}")
+        if self.proxy_url:
+            logger.debug(f"Using proxy: {self.proxy_url}")
 
+        response: Optional[aiohttp.ClientResponse] = None
         try:
-            response = await session.get(url, proxy=self.proxy_url)
-            if response.status != 200:
+
+            response = await session.get(
+                url=pdf_url,
+                proxy=self.proxy_url,
+                timeout=self.timeout,
+                allow_redirects=True,
+            )
+
+            if response.status == 200:
+                content_type = response.headers.get("Content-Type", "").lower()
+                if "application/pdf" in content_type:
+                    logger.info(
+                        f"Successfully initiated PDF download for doc ID {doc_id}"
+                    )
+                    return response  # Caller must release
+                else:
+                    logger.warning(
+                        f"Expected PDF, received Content-Type '{content_type}' for doc ID {doc_id}"
+                    )
+                    await response.release()
+                    return None
+            else:
                 logger.warning(
-                    f"Failed to fetch PDF from IEEE ({self.hostname}): {url}, Status: {response.status}"
+                    f"Failed fetch for doc ID {doc_id}. Status: {response.status}"
                 )
+                await response.release()
                 return None
-            return response
+
+        except asyncio.TimeoutError:
+
+            logger.error(
+                f"Timeout ({self.timeout.total}s) fetching PDF for doc ID {doc_id}"
+            )
+            if response:
+                await response.release()
+            return None
         except aiohttp.ClientError as e:
-            logger.error(f"HTTP request failed for URL {url}: {e}")
+            logger.error(
+                f"HTTP client error fetching PDF for doc ID {doc_id}: {e}",
+                exc_info=True,
+            )
+            if response:
+                await response.release()
+            return None
+        except Exception as e:
+            logger.error(
+                f"Unexpected error fetching PDF for doc ID {doc_id}: {e}", exc_info=True
+            )
+            if response:
+                await response.release()
             return None
