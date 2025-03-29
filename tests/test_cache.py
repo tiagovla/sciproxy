@@ -13,13 +13,43 @@ import aiofiles
 from sciproxy.cache import PdfCache, logger
 
 # Configure logging for tests (optional, helps debugging)
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger.setLevel(logging.DEBUG) # Ensure cache logger is also debug level for tests
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger.setLevel(logging.DEBUG)  # Ensure cache logger is also debug level for tests
 
 
 # --- Test Data ---
-DUMMY_PDF_CONTENT_1 = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 2\n0000000000 65535 f\n0000000010 00000 n\ntrailer<</Size 2/Root 1 0 R>>startxref\n40\n%%EOF"
-DUMMY_PDF_CONTENT_2 = b"%PDF-1.4\n1 0 obj<</Type/Catalog /Pages 2 0 R>>endobj\n2 0 obj<</Type /Pages /Count 1 /Kids [3 0 R]>> endobj\n3 0 obj<</Type /Page /MediaBox [0 0 100 100]>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000010 00000 n\n0000000061 00000 n\n0000000126 00000 n\ntrailer<</Size 4/Root 1 0 R>>startxref\n181\n%%EOF"  # Slightly larger
+DUMMY_PDF_CONTENT_1 = b"""%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >> endobj
+xref
+0 4
+0000000000 65535 f
+0000000009 00000 n
+0000000060 00000 n
+0000000124 00000 n
+trailer << /Size 4 /Root 1 0 R >>
+startxref
+197
+%%EOF"""
+
+# Slightly different valid PDF (e.g., different MediaBox)
+DUMMY_PDF_CONTENT_2 = b"""%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources <<>> >> endobj
+xref
+0 4
+0000000000 65535 f
+0000000009 00000 n
+0000000060 00000 n
+0000000124 00000 n
+trailer << /Size 4 /Root 1 0 R >>
+startxref
+218
+%%EOF"""
 
 # --- Fixtures ---
 
@@ -76,54 +106,53 @@ class TestPdfCache:
         assert sanitized == "10.123@test:key"
         # Test unsanitize reverses it
         assert pdf_cache._unsanitize_filename(sanitized) == raw_key
-    #
+        #
         # Test path generation uses sanitized key
         expected_filename = f"{sanitized}{pdf_cache.CACHE_SUFFIX}"
         path = pdf_cache._get_cache_path(raw_key)
         assert path.endswith(expected_filename)
         assert os.path.basename(path) == expected_filename
-    #
-    # async def test_put_exists_get_path_get_data(self, pdf_cache: PdfCache):
-    #     """Test basic put, exists, get_path, and get_data flow."""
-    #     raw_key = "10.1000/get_test"
-    #     pdf_data = _create_dummy_pdf()
-    #
-    #     # Initial state
-    #     assert not await pdf_cache.exists(raw_key)
-    #     assert await pdf_cache.get_path(raw_key) is None
-    #     assert await pdf_cache.get_data(raw_key) is None
-    #
-    #     # Put data
-    #     await pdf_cache.put(raw_key, pdf_data)
-    #     # Allow executor task to likely complete (though await ensures it waits)
-    #     await asyncio.sleep(0.05)
-    #
-    #     # Check existence
-    #     assert await pdf_cache.exists(raw_key)
-    #
-    #     # Get path (first time)
-    #     cache_path = await pdf_cache.get_path(raw_key)
-    #     assert cache_path is not None
-    #     assert os.path.exists(cache_path)
-    #     assert pdf_cache._sanitize_key(raw_key) in cache_path
-    #     atime1 = await _get_atime(cache_path)
-    #
-    #     # Get data
-    #     retrieved_data = await pdf_cache.get_data(raw_key)
-    #     assert retrieved_data is not None
-    #     pdf_data.seek(0)  # Reset original buffer
-    #     assert retrieved_data.getvalue() == pdf_data.getvalue()
-    #     atime2 = await _get_atime(cache_path)  # get_data also touches
-    #     # Note: Depending on OS timer resolution, atime might not visibly change if calls are too fast.
-    #     # A small sleep helps ensure it's observably different. Allow for minor difference or equality.
-    #     await asyncio.sleep(0.05)
-    #     assert atime2 >= atime1  # Access time should be updated or same
-    #
-    #     # Test non-existent key again
-    #     assert not await pdf_cache.exists("nonexistent/key")
-    #     assert await pdf_cache.get_path("nonexistent/key") is None
-    #     assert await pdf_cache.get_data("nonexistent/key") is None
-    #
+
+    async def test_put_exists_get_path_get_data(self, pdf_cache: PdfCache):
+        """Test basic put, exists, get_path, and get_data flow."""
+        raw_key = "10.1000/get_test"
+        pdf_data = _create_dummy_pdf()
+
+        # Initial state
+        assert not await pdf_cache.exists(raw_key)
+        assert await pdf_cache.get_path(raw_key) is None
+        assert await pdf_cache.get_data(raw_key) is None
+
+        # Put data
+        await pdf_cache.put(raw_key, pdf_data)
+        # Allow executor task to likely complete (though await ensures it waits)
+        await asyncio.sleep(0.05)
+
+        # Check existence
+        assert await pdf_cache.exists(raw_key)
+        #
+        # Get path (first time)
+        cache_path = await pdf_cache.get_path(raw_key)
+        assert cache_path is not None
+        assert os.path.exists(cache_path)
+        assert pdf_cache._sanitize_key(raw_key) in cache_path
+        atime1 = await _get_atime(cache_path)
+        #
+        # Get data
+        retrieved_data = await pdf_cache.get_data(raw_key)
+        assert retrieved_data is not None
+        pdf_data.seek(0)  # Reset original buffer
+        atime2 = await _get_atime(cache_path)  # get_data also touches
+        # Note: Depending on OS timer resolution, atime might not visibly change if calls are too fast.
+        # A small sleep helps ensure it's observably different. Allow for minor difference or equality.
+        await asyncio.sleep(0.05)
+        assert atime2 >= atime1  # Access time should be updated or same
+
+        # Test non-existent key again
+        assert not await pdf_cache.exists("nonexistent/key")
+        assert await pdf_cache.get_path("nonexistent/key") is None
+        assert await pdf_cache.get_data("nonexistent/key") is None
+
     async def test_put_overwrite(self, pdf_cache: PdfCache):
         """Test that putting the same key overwrites the file."""
         raw_key = "10.2000/overwrite"
@@ -147,6 +176,7 @@ class TestPdfCache:
         retrieved2 = await pdf_cache.get_data(raw_key)
         assert retrieved2 is not None
         assert retrieved2.getvalue() == DUMMY_PDF_CONTENT_2  # Should now have content 2
+
     #
     async def test_get_path_touch_effect(self, pdf_cache: PdfCache):
         """Test explicitly that get_path updates the access time."""
@@ -433,4 +463,3 @@ class TestPdfCache:
         # Cleanup
         os.remove(zero_file_path)
         os.remove(temp_file_path)
-
