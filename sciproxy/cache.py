@@ -193,7 +193,7 @@ class PdfCache:
             # get_path already logged the cache miss
             return None
 
-    def _save_pdf_sync(self, pdf_data: io.BytesIO, path: str):
+    def _save_pdf_sync(self, pdf_data: io.BytesIO, path: str, linearize: bool):
         """
         Save PDF data from BytesIO synchronously using pikepdf and a temp file.
         Do not call directly; use via `run_in_executor`.
@@ -209,7 +209,7 @@ class PdfCache:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             # Open buffer with pikepdf and save to temp file with linearization.
             with pikepdf.open(pdf_data) as pdf:
-                pdf.save(temp_path, linearize=True)
+                pdf.save(temp_path, linearize=linearize)
             # Rename temp file to final path atomically (on most systems).
             os.rename(temp_path, path)
             logger.info(f"Successfully cached PDF to {path}")
@@ -237,7 +237,7 @@ class PdfCache:
                 except OSError as rm_err:
                     logger.error(f"Failed remove {temp_path}: {rm_err}")
 
-    async def put(self, raw_key: str, pdf_data: io.BytesIO):
+    async def put(self, raw_key: str, pdf_data: io.BytesIO, linearize: bool = True):
         """
         Save the provided PDF data (BytesIO buffer) to the cache for the raw key.
         Run the synchronous save operation in an executor thread.
@@ -251,7 +251,9 @@ class PdfCache:
             loop = asyncio.get_running_loop()
             logger.debug(f"Scheduling cache save for key '{raw_key}' to {cache_path}")
             # Schedule the sync save function in the executor.
-            await loop.run_in_executor(None, self._save_pdf_sync, pdf_data, cache_path)
+            await loop.run_in_executor(
+                None, self._save_pdf_sync, pdf_data, cache_path, linearize
+            )
         except OSError as e:
             logger.error(f"OS Error preventing cache put for key '{raw_key}': {e}")
         except Exception as e:
