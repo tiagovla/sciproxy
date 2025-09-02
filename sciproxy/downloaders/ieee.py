@@ -131,15 +131,32 @@ class IEEEDownloader(Downloader):
             logger.debug(f"Using proxy: {self.proxy_url}")
 
         response: Optional[aiohttp.ClientResponse] = None
-        try:
 
+        if "capes" in self.hostname:
+            warm_urls = [
+                "https://ez27.periodicos.capes.gov.br/login?url=" + pdf_url,
+                "https://www.periodicos.capes.gov.br/?option=com_pezproxy&controller=auth&view=pezproxyauth&url="
+                + pdf_url,
+                "https://ez27.periodicos.capes.gov.br/connect?qurl=" + pdf_url,
+            ]
+            try:
+                for warm_url in warm_urls:
+                    warm_response = await session.get(
+                        url=warm_url,
+                        proxy=self.proxy_url,
+                        timeout=self.timeout,
+                        allow_redirects=True,
+                    )
+                    await warm_response.release()
+            except Exception as e:
+                logger.warning(f"Error warming CAPES credentials: {e}", exc_info=True)
+        try:
             response = await session.get(
                 url=pdf_url,
                 proxy=self.proxy_url,
                 timeout=self.timeout,
                 allow_redirects=True,
             )
-
             if response.status == 200:
                 content_type = response.headers.get("Content-Type", "").lower()
                 if "application/pdf" in content_type:
