@@ -4,7 +4,7 @@ import urllib.parse
 from typing import Optional
 
 import aiohttp
-from sciproxy.downloaders.abc import Downloader
+from sciproxy.downloaders.abc import Downloader, DownloaderUnavailable
 import sciproxy.utils
 
 
@@ -98,6 +98,11 @@ class IEEEDownloader(Downloader):
                 logger.warning(f"Failed to resolve DOI {doi} to a redirect URL.")
                 return None
             logger.debug(f"DOI {doi} resolved to redirect URL: {redirect_url_str}")
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            logger.error(f"Error resolving DOI {doi}: {e}", exc_info=True)
+            raise
+        except DownloaderUnavailable:
+            raise
         except Exception as e:
             logger.error(f"Error resolving DOI {doi}: {e}", exc_info=True)
             return None
@@ -128,7 +133,7 @@ class IEEEDownloader(Downloader):
         pdf_url = self._get_pdf_url(doc_id)
         logger.info(f"Fetching PDF using document ID {doc_id} from URL: {pdf_url}")
         if self.proxy_url:
-            logger.debug(f"Using proxy: {self.proxy_url}")
+            logger.debug("Using configured proxy")
 
         response: Optional[aiohttp.ClientResponse] = None
 
@@ -147,7 +152,7 @@ class IEEEDownloader(Downloader):
                         timeout=self.timeout,
                         allow_redirects=True,
                     )
-                    await warm_response.release()
+                    warm_response.release()
             except Exception as e:
                 logger.warning(f"Error warming CAPES credentials: {e}", exc_info=True)
         try:
@@ -158,8 +163,8 @@ class IEEEDownloader(Downloader):
                 allow_redirects=True,
             )
             if response.status == 200:
-                content_type = response.headers.get("Content-Type", "").lower()
-                if "application/pdf" in content_type:
+                content_type = response.content_type
+                if content_type == "application/pdf":
                     logger.info(
                         f"Successfully initiated PDF download for doc ID {doc_id}"
                     )
@@ -168,13 +173,16 @@ class IEEEDownloader(Downloader):
                     logger.warning(
                         f"Expected PDF, received Content-Type '{content_type}' for doc ID {doc_id}"
                     )
-                    await response.release()
+                    response.release()
                     return None
             else:
+                status = response.status
                 logger.warning(
-                    f"Failed fetch for doc ID {doc_id}. Status: {response.status}"
+                    f"Failed fetch for doc ID {doc_id}. Status: {status}"
                 )
-                await response.release()
+                response.release()
+                if status in (401, 403, 429) or status >= 500:
+                    raise DownloaderUnavailable(f"IEEE returned HTTP {status}")
                 return None
 
         except asyncio.TimeoutError:
@@ -183,20 +191,22 @@ class IEEEDownloader(Downloader):
                 f"Timeout ({self.timeout.total}s) fetching PDF for doc ID {doc_id}"
             )
             if response:
-                await response.release()
-            return None
+                response.release()
+            raise
         except aiohttp.ClientError as e:
             logger.error(
                 f"HTTP client error fetching PDF for doc ID {doc_id}: {e}",
                 exc_info=True,
             )
             if response:
-                await response.release()
-            return None
+                response.release()
+            raise
+        except DownloaderUnavailable:
+            raise
         except Exception as e:
             logger.error(
                 f"Unexpected error fetching PDF for doc ID {doc_id}: {e}", exc_info=True
             )
             if response:
-                await response.release()
+                response.release()
             return None

@@ -5,23 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DOI Not Found</title>
     <link rel="icon" type="image/png" href="/static/favicon.png" />
-    <link rel="stylesheet" href="static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=website-polish" />
   </head>
-  <body>
+  <body class="dark-mode">
     <div class="mode-switch">
       <span>Light</span>
       <label class="switch">
-        <input type="checkbox" id="modeToggle" onclick="toggleDarkMode()" />
+        <input
+          type="checkbox"
+          id="modeToggle"
+          aria-label="Toggle dark mode"
+          onclick="toggleDarkMode()"
+          checked
+        />
         <span class="slider"></span>
       </label>
       <span>Dark</span>
     </div>
-    <div class="container">
+    <main class="container">
       <h1>PDF Not Found</h1>
       <p>Sorry, the PDF for the DOI you searched for could not be found.</p>
       <a href="/" class="button">Go Back to Home</a>
-    </div>
+    </main>
   </body>
 
-  <script src="static/dark-mode.js"></script>
+  <script src="/static/dark-mode.js?v=dark-default"></script>
 </html>

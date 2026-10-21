@@ -3,53 +3,395 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DOI PDF Downloader</title>
+      <title>PDF Downloader</title>
     <link rel="icon" type="image/png" href="/static/favicon.png" />
-    <link rel="stylesheet" href="static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=website-polish" />
   </head>
-  <body>
+  <body class="dark-mode">
     <!-- Dark/Light Mode Toggle Switch -->
     <div class="mode-switch">
       <span>Light</span>
       <label class="switch">
-        <input type="checkbox" id="modeToggle" onclick="toggleDarkMode()" />
+        <input
+          type="checkbox"
+          id="modeToggle"
+          aria-label="Toggle dark mode"
+          onclick="toggleDarkMode()"
+          checked
+        />
         <span class="slider"></span>
       </label>
       <span>Dark</span>
     </div>
 
     <!-- Form Container -->
-    <div class="container">
-      <h1>DOI PDF Downloader</h1>
-      <p>Enter the DOI of the manuscript to download its PDF.</p>
+    <main class="container">
+      <h1>PDF Downloader</h1>
+      <p>Enter a DOI or IEEE Xplore document link to download its PDF.</p>
       <form id="doiForm" onsubmit="handleFormSubmit(event)">
+        <label class="field-label" for="doiInput">DOI or IEEE Xplore link</label>
         <input
           type="text"
           id="doiInput"
-          placeholder="Enter DOI (e.g., 10.1000/xyz123)"
+          placeholder="DOI, doi.org URL, or IEEE document URL"
+          aria-describedby="doiHint"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
           required
         />
-        <br />
+        <p class="input-hint" id="doiHint">
+          Enter a DOI, doi.org URL, or IEEE Xplore document link.
+        </p>
         <button class="button" type="submit">Download PDF</button>
+        <button
+          class="button button-secondary"
+          id="cancelButton"
+          type="button"
+          onclick="cancelDownload()"
+          hidden
+        >
+          Cancel
+        </button>
       </form>
-      <div class="spinner" id="spinner"></div>
-    </div>
+      <div class="download-progress" id="downloadProgress" hidden>
+        <progress
+          id="progressBar"
+          max="100"
+          aria-label="PDF download progress"
+        ></progress>
+        <p id="downloadStatus" role="status" aria-live="polite"></p>
+      </div>
+    </main>
 
     <script>
-      function handleFormSubmit(event) {
-        event.preventDefault();
-        const doi = document.getElementById("doiInput").value.trim();
+      let currentDownloadUrl;
+      let currentDownloadKey;
+      let currentDownloadFilename;
+      let progressEventSource;
+      let currentProgressId;
+      let currentDownloadController;
+      let cancellationRequested = false;
 
-        // Add loading class to container and show spinner
-        document.querySelector(".container").classList.add("loading");
-        document.getElementById("spinner").style.display = "block";
+      function normalizeDownloadInput(value) {
+        let input = value.trim().replace(/^doi:\s*/i, "");
+        const knownUrl =
+          /^(?:(?:https?:\/\/)?(?:dx\.)?doi\.org\/|(?:https?:\/\/)?ieeexplore\.ieee\.org\/)/i.test(
+            input,
+          );
+        if (knownUrl) {
+          let url;
+          try {
+            url = new URL(
+              /^https?:\/\//i.test(input) ? input : `https://${input}`,
+            );
+          } catch {
+            throw new Error("invalid-input");
+          }
+          const hostname = url.hostname.toLowerCase();
+          if (url.username || url.password || url.port) {
+            throw new Error("invalid-input");
+          }
 
-        // Simulate a small delay before redirect (for visual effect)
-        setTimeout(() => {
-          window.location.href = `/${doi}`;
-        }, 500);
+          if (hostname === "ieeexplore.ieee.org") {
+            const match = url.pathname.match(/^\/document\/(\d+)\/?$/);
+            if (!match) throw new Error("invalid-input");
+            const documentId = match[1];
+            return {
+              kind: "ieee",
+              documentId,
+              key: `ieee:${documentId}`,
+              displayValue: `https://ieeexplore.ieee.org/document/${documentId}`,
+            };
+          }
+
+          if (hostname !== "doi.org" && hostname !== "dx.doi.org") {
+            throw new Error("invalid-input");
+          }
+
+          let doi;
+          try {
+            doi = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+          } catch {
+            throw new Error("invalid-input");
+          }
+          input = doi;
+        } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(input)) {
+          throw new Error("invalid-input");
+        }
+
+        const doi = input.trim().replace(/^doi:\s*/i, "");
+        if (
+          !/^10\.\d{4,9}\/\S+$/i.test(doi) ||
+          /[\u0000-\u001f\u007f]/.test(doi)
+        ) {
+          throw new Error("invalid-input");
+        }
+        return {
+          kind: "doi",
+          doi,
+          key: `doi:${doi}`,
+          displayValue: doi,
+        };
       }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      }
+
+      function downloadCurrentPdf() {
+        const link = document.createElement("a");
+        link.href = currentDownloadUrl;
+        link.download = currentDownloadFilename;
+        link.click();
+      }
+
+      function createProgressId() {
+        if (crypto.randomUUID) return crypto.randomUUID().replaceAll("-", "");
+        return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+      }
+
+      async function cancelDownload() {
+        if (!currentProgressId) return;
+        const progressId = currentProgressId;
+        cancellationRequested = true;
+        document.getElementById("cancelButton").disabled = true;
+        const cancelRequest = fetch(`/progress/${progressId}/cancel`, {
+          method: "POST",
+        }).catch(() => undefined);
+        if (currentDownloadController) currentDownloadController.abort();
+        if (progressEventSource) progressEventSource.close();
+        await cancelRequest;
+      }
+
+      async function handleFormSubmit(event) {
+        event.preventDefault();
+        const doiInput = document.getElementById("doiInput");
+        const form = document.getElementById("doiForm");
+        const container = document.querySelector(".container");
+        const submitButton = form.querySelector("button[type=submit]");
+        const cancelButton = document.getElementById("cancelButton");
+        const progress = document.getElementById("downloadProgress");
+        const progressBar = document.getElementById("progressBar");
+        const status = document.getElementById("downloadStatus");
+        let target;
+
+        try {
+          target = normalizeDownloadInput(doiInput.value);
+          doiInput.value = target.displayValue;
+        } catch {
+          progress.hidden = false;
+          progressBar.hidden = true;
+          status.textContent =
+            "Enter a DOI, doi.org URL, or IEEE Xplore document link.";
+          doiInput.focus();
+          return;
+        }
+
+        if (currentDownloadUrl && currentDownloadKey === target.key) {
+          downloadCurrentPdf();
+          return;
+        }
+        if (currentDownloadUrl) URL.revokeObjectURL(currentDownloadUrl);
+        currentDownloadUrl = undefined;
+        currentDownloadKey = undefined;
+        progress.hidden = false;
+        progressBar.hidden = false;
+        progressBar.removeAttribute("value");
+        status.textContent = "Finding and preparing the PDF…";
+        submitButton.textContent = "Searching…";
+        submitButton.disabled = true;
+        doiInput.disabled = true;
+        cancelButton.hidden = false;
+        cancelButton.disabled = false;
+        container.classList.add("loading");
+        form.setAttribute("aria-busy", "true");
+        cancellationRequested = false;
+
+        if (progressEventSource) progressEventSource.close();
+        const progressId = createProgressId();
+        currentProgressId = progressId;
+        currentDownloadController = new AbortController();
+        const eventSource = new EventSource(`/progress/${progressId}`);
+        progressEventSource = eventSource;
+        eventSource.onmessage = ({ data }) => {
+          let update;
+          try {
+            update = JSON.parse(data);
+          } catch {
+            return;
+          }
+          status.textContent = update.message;
+          if (update.phase === "downloading" && update.total > 0) {
+            const percent = Math.min(
+              100,
+              Math.round((update.downloaded / update.total) * 100),
+            );
+            progressBar.value = percent;
+            status.textContent = `${update.message} ${percent}%`;
+          } else if (
+            update.phase === "downloading" &&
+            update.downloaded > 0
+          ) {
+            status.textContent = `${update.message} ${formatBytes(update.downloaded)} received`;
+          } else if (
+            update.phase === "searching" ||
+            update.phase === "preparing" ||
+            update.phase === "ready"
+          ) {
+            progressBar.removeAttribute("value");
+          }
+          if (update.phase === "failed" || update.phase === "cancelled") {
+            progressBar.hidden = true;
+          }
+          if (
+            update.phase === "ready" ||
+            update.phase === "failed" ||
+            update.phase === "cancelled"
+          ) {
+            eventSource.close();
+            if (progressEventSource === eventSource) {
+              progressEventSource = undefined;
+            }
+          }
+        };
+
+        try {
+          const downloadPath =
+            target.kind === "ieee"
+              ? `/ieee/document/${target.documentId}`
+              : `/${target.doi.split("/").map(encodeURIComponent).join("/")}`;
+          const response = await fetch(`${downloadPath}?progress=${progressId}`, {
+            headers: { Accept: "application/pdf" },
+            signal: currentDownloadController.signal,
+          });
+
+          if (
+            !response.ok ||
+            !response.headers.get("content-type")?.includes("application/pdf")
+          ) {
+            const details = await response.json().catch(() => ({}));
+            const error = new Error(details.message || "Download failed.");
+            error.code = details.error;
+            error.status = response.status;
+            throw error;
+          }
+
+          const total = Number(response.headers.get("content-length"));
+          const hasTotal = Number.isFinite(total) && total > 0;
+          if (hasTotal) progressBar.value = 0;
+
+          const reader = response.body.getReader();
+          const chunks = [];
+          let loaded = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            loaded += value.byteLength;
+
+            if (hasTotal) {
+              const percent = Math.min(100, Math.round((loaded / total) * 100));
+              progressBar.value = percent;
+              status.textContent = `Downloading PDF… ${percent}%`;
+            } else {
+              status.textContent = `Receiving PDF… ${formatBytes(loaded)} received`;
+            }
+          }
+
+          const pdf = new Blob(chunks, { type: "application/pdf" });
+          currentDownloadUrl = URL.createObjectURL(pdf);
+          currentDownloadKey = target.key;
+          const filename =
+            target.kind === "ieee"
+              ? `ieee-${target.documentId}`
+              : target.doi.replace(/[^a-z0-9.-]+/gi, "_").slice(0, 160);
+          currentDownloadFilename = `${filename}.pdf`;
+          progressBar.value = 100;
+          status.textContent = `${currentDownloadFilename} is ready. Download started.`;
+          downloadCurrentPdf();
+          submitButton.textContent = "Download again";
+        } catch (error) {
+          if (progressEventSource) progressEventSource.close();
+          progressEventSource = undefined;
+          progressBar.hidden = true;
+          if (cancellationRequested || error.name === "AbortError") {
+            status.textContent = "Download cancelled.";
+            submitButton.textContent = "Download PDF";
+          } else if (error.code === "invalid_doi" || error.status === 400) {
+            status.textContent =
+              "Enter a DOI, doi.org URL, or IEEE Xplore document link.";
+            submitButton.textContent = "Download PDF";
+          } else if (error.code === "not_found" || error.status === 404) {
+            status.textContent =
+              "No PDF was found for this input. Check it or try again later.";
+            submitButton.textContent = "Try again";
+          } else if (error.code === "server_busy" || error.status === 503) {
+            status.textContent =
+              "The download queue is full. Please try again shortly.";
+            submitButton.textContent = "Try again";
+          } else if (error.code === "source_timeout" || error.status === 504) {
+            status.textContent =
+              "A download source timed out. Please try again.";
+            submitButton.textContent = "Try again";
+          } else if (
+            error.code === "source_unavailable" ||
+            error.status === 502
+          ) {
+            status.textContent =
+              "A download source could not be reached. Please try again.";
+            submitButton.textContent = "Try again";
+          } else if (error.code === "storage_error" || error.status === 500) {
+            status.textContent =
+              "The server could not prepare the PDF. Please try again.";
+            submitButton.textContent = "Try again";
+          } else if (error.name === "TypeError") {
+            status.textContent =
+              "SciProxy could not be reached. Check the connection and try again.";
+            submitButton.textContent = "Try again";
+          } else {
+            status.textContent = "The download failed. Please try again.";
+            submitButton.textContent = "Try again";
+          }
+        } finally {
+          if (progressEventSource) progressEventSource.close();
+          progressEventSource = undefined;
+          currentProgressId = undefined;
+          currentDownloadController = undefined;
+          cancelButton.hidden = true;
+          cancelButton.disabled = false;
+          submitButton.disabled = false;
+          doiInput.disabled = false;
+          container.classList.remove("loading");
+          form.removeAttribute("aria-busy");
+        }
+      }
+
+      document.getElementById("doiInput").addEventListener("input", () => {
+        const submitButton = document.querySelector("#doiForm button[type=submit]");
+        if (submitButton.disabled) return;
+        if (currentDownloadUrl) {
+          let isSameDoi = false;
+          try {
+            isSameDoi =
+              normalizeDownloadInput(
+                document.getElementById("doiInput").value,
+              ).key === currentDownloadKey;
+          } catch {
+            isSameDoi = false;
+          }
+          submitButton.textContent = isSameDoi
+            ? "Download again"
+            : "Download PDF";
+        } else if (submitButton.textContent === "Try again") {
+          submitButton.textContent = "Download PDF";
+        }
+      });
     </script>
-    <script src="static/dark-mode.js"></script>
+    <script src="/static/dark-mode.js?v=dark-default"></script>
   </body>
 </html>

@@ -13,9 +13,6 @@
   --dark-text-color: #ffffff;
   --dark-input-bg: #333;
   --dark-border-color: #555;
-
-  --spinner-light: rgba(0, 0, 0, 0.1);
-  --spinner-primary: var(--primary-color);
 }
 
 @import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap");
@@ -27,8 +24,10 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100dvh;
+  min-height: 100dvh;
   margin: 0;
+  padding: 72px 16px 24px;
+  box-sizing: border-box;
   transition:
     background-color 0.3s,
     color 0.3s;
@@ -36,13 +35,14 @@ body {
 
 .container {
   background-color: var(--light-container-bg);
-  padding: 20px 20px;
-  margin: auto 10px;
+  padding: 24px;
+  margin: auto;
   border-radius: 10px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
   text-align: center;
   position: relative;
-  width: 300px;
+  width: min(100%, 420px);
+  box-sizing: border-box;
   transition:
     background-color 0.3s,
     color 0.3s;
@@ -69,7 +69,7 @@ input[type="text"] {
   font-size: 16px;
   border: 1px solid var(--light-border-color);
   border-radius: 5px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   box-sizing: border-box;
   transition:
     background-color 0.3s,
@@ -77,7 +77,24 @@ input[type="text"] {
     border-color 0.3s;
 }
 
+.field-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--light-text-color);
+  font-weight: 600;
+  text-align: left;
+}
+
+.input-hint {
+  margin: 0 0 16px;
+  color: var(--light-secondary-text);
+  font-size: 13px;
+  text-align: left;
+}
+
 .button {
+  display: block;
+  box-sizing: border-box;
   padding: 12px 20px;
   font-size: 16px;
   background-color: var(--primary-color);
@@ -90,32 +107,58 @@ input[type="text"] {
   transition: background-color 0.3s;
 }
 
+.button[hidden] {
+  display: none;
+}
+
+.button-secondary {
+  margin-top: 10px;
+  border: 1px solid var(--primary-color);
+  background: transparent;
+  color: var(--primary-color);
+}
+
+.button-secondary:hover {
+  background: var(--primary-color);
+  color: var(--dark-text-color);
+}
+
 .button:hover {
   background-color: var(--primary-color-hover);
 }
 
-.spinner {
-  display: none;
-  margin: 20px auto;
-  width: 40px;
-  height: 40px;
-  border: 4px solid var(--spinner-light);
-  border-top: 4px solid var(--spinner-primary);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+.download-progress {
+  margin-top: 20px;
 }
 
-@keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
+.download-progress[hidden],
+progress[hidden] {
+  display: none;
+}
+
+progress {
+  display: block;
+  width: 100%;
+  height: 18px;
+  accent-color: #4caf50;
+}
+
+progress::-webkit-progress-value {
+  background-color: #4caf50;
+}
+
+progress::-moz-progress-bar {
+  background-color: #4caf50;
+}
+
+#downloadStatus {
+  min-height: 1.25em;
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
 }
 
 .loading input,
-.loading button {
+.loading button[type="submit"] {
   opacity: 0.5;
   pointer-events: none;
 }
@@ -140,6 +183,22 @@ body.dark-mode input[type="text"] {
   background-color: var(--dark-input-bg);
   color: var(--dark-text-color);
   border-color: var(--dark-border-color);
+}
+
+body.dark-mode .field-label,
+body.dark-mode .input-hint {
+  color: var(--dark-text-color);
+}
+
+body.dark-mode button.button-secondary {
+  border-color: var(--primary-color);
+  background: transparent;
+  color: var(--primary-color);
+}
+
+body.dark-mode button.button-secondary:hover {
+  background: var(--primary-color);
+  color: var(--dark-text-color);
 }
 
 body.dark-mode button {
@@ -207,4 +266,43 @@ input:checked + .slider:before {
 
 body.dark-mode .mode-switch {
   color: var(--dark-text-color);
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible,
+.switch input:focus-visible + .slider {
+  outline: 3px solid var(--primary-color);
+  outline-offset: 3px;
+}
+
+@media (max-width: 480px) {
+  body {
+    align-items: flex-start;
+    padding-top: 76px;
+  }
+
+  .container {
+    padding: 20px;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  .mode-switch {
+    top: 12px;
+    right: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

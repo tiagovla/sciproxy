@@ -14,11 +14,10 @@ function toggleDarkMode() {
 
 // Check for saved user preference
 function loadDarkModePreference() {
-    const isDarkMode = localStorage.getItem("darkMode") === "true";
-    if (isDarkMode) {
-        document.body.classList.add("dark-mode");
-        document.getElementById("modeToggle").checked = true;
-    }
+    const savedPreference = localStorage.getItem("darkMode");
+    const isDarkMode = savedPreference === null || savedPreference === "true";
+    document.body.classList.toggle("dark-mode", isDarkMode);
+    document.getElementById("modeToggle").checked = isDarkMode;
 }
 
 // Load preference on page load

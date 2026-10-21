@@ -1,9 +1,12 @@
 import asyncio
-import re
-from sciproxy.client import Optional
-from sciproxy.downloaders.abc import Downloader
-import aiohttp
 import logging
+import re
+from typing import Optional
+from urllib.parse import quote
+
+import aiohttp
+
+from sciproxy.downloaders.abc import Downloader, DownloaderUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +23,19 @@ class SciHubDownloader(Downloader):
         self, doi: str, session: aiohttp.ClientSession
     ) -> Optional[aiohttp.ClientResponse]:
         """Get the PDF from Sci-Hub using the DOI."""
-        url = f"https://sci-hub.se/{doi}"
+        url = f"https://sci-hub.se/{quote(doi, safe='/')}"
         async with session.get(url) as response:
-            text = await response.text()
+            if response.status != 200:
+                if response.status in (401, 403, 429) or response.status >= 500:
+                    raise DownloaderUnavailable(
+                        f"Sci-Hub returned HTTP {response.status}"
+                    )
+                return None
+            page = await response.content.read(1024 * 1024 + 1)
+            if len(page) > 1024 * 1024:
+                logger.warning("Sci-Hub lookup page exceeds size limit for DOI %s", doi)
+                return None
+            text = page.decode("utf-8", errors="replace")
             match = re.search(r"location\.href='(/[^']*)'", text)
             if match:
                 pdf_url = self._construct_pdf_url(match.group(1))
@@ -41,14 +54,23 @@ class SciHubDownloader(Downloader):
         self, pdf_url: str, session: aiohttp.ClientSession, retry_limit: int = 4
     ) -> Optional[aiohttp.ClientResponse]:
         """Retry fetching the PDF if a ConnectionRefusedError occurs with increasing delay."""
+        last_error: Optional[aiohttp.ClientConnectionError] = None
         for attempt in range(retry_limit):
             try:
                 pdf_response = await session.get(pdf_url)
-                if pdf_response.status == 200:
+                if (
+                    pdf_response.status == 200
+                    and pdf_response.content_type == "application/pdf"
+                ):
                     return pdf_response
+                status = pdf_response.status
                 logger.warning(f"Failed to fetch PDF from Sci-Hub: {pdf_url}")
+                pdf_response.release()
+                if status in (401, 403, 429) or status >= 500:
+                    raise DownloaderUnavailable(f"Sci-Hub returned HTTP {status}")
                 return None
-            except aiohttp.ClientConnectionError:
+            except aiohttp.ClientConnectionError as error:
+                last_error = error
                 logger.warning(
                     f"Connection refused on attempt {attempt + 1} to fetch PDF from Sci-Hub: {pdf_url}"
                 )
@@ -58,4 +80,8 @@ class SciHubDownloader(Downloader):
         logger.warning(
             f"Failed to fetch PDF from Sci-Hub after {retry_limit} attempts: {pdf_url}"
         )
+        if last_error:
+            raise DownloaderUnavailable(
+                f"Sci-Hub PDF endpoint could not be reached after {retry_limit} attempts"
+            ) from last_error
         return None

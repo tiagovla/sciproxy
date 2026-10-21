@@ -1,0 +1,21 @@
+services:
+  sciproxy:
+    # build: .
+    image: tiagovla/sciproxy:latest
+    container_name: sciproxy
+    environment:
+      PROXY_URL: "${PROXY_URL:-}"
+      CACHE_DIR: "${CACHE_DIR:-}"
+      IEEE_HOSTNAME: "${IEEE_HOSTNAME:-}"
+      HOST: "${HOST:-0.0.0.0}"
+      PORT: "${PORT:-8080}"
+      MAX_PDF_BYTES: "${MAX_PDF_BYTES:-104857600}"
+      CACHE_MAX_BYTES: "${CACHE_MAX_BYTES:-2147483648}"
+      MAX_CONCURRENT_DOWNLOADS: "${MAX_CONCURRENT_DOWNLOADS:-4}"
+      MAX_QUEUED_DOWNLOADS: "${MAX_QUEUED_DOWNLOADS:-16}"
+      UNPAYWALL_EMAIL: "${UNPAYWALL_EMAIL:-}"
+    ports:
+      - "8080:${PORT:-8080}"
+    restart: always
+    volumes:
+      - ./data:/cache
